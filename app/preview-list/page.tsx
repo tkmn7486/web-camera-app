@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { ArrowLeft, Download, Trash2 } from "lucide-react"
+import { ArrowLeft, Download, Trash2, X, Eye } from "lucide-react"
 
 interface SavedImage {
   id: string
@@ -14,6 +14,7 @@ interface SavedImage {
 
 export default function PreviewListPage() {
   const [images, setImages] = useState<SavedImage[]>([])
+  const [selectedImage, setSelectedImage] = useState<SavedImage | null>(null)
 
   useEffect(() => {
     // ローカルストレージから保存された画像を読み込む
@@ -34,6 +35,10 @@ export default function PreviewListPage() {
     const updatedImages = images.filter((img) => img.id !== id)
     setImages(updatedImages)
     localStorage.setItem("camera-images", JSON.stringify(updatedImages))
+    // プレビュー中の画像を削除した場合は閉じる
+    if (selectedImage?.id === id) {
+      setSelectedImage(null)
+    }
   }
 
   return (
@@ -70,13 +75,28 @@ export default function PreviewListPage() {
                   <img
                     src={image.dataUrl || "/placeholder.svg"}
                     alt={`撮影日時: ${new Date(image.timestamp).toLocaleString("ja-JP")}`}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover cursor-pointer"
+                    onClick={() => setSelectedImage(image)}
                   />
                   <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button
                       size="icon"
                       variant="ghost"
-                      onClick={() => downloadImage(image)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedImage(image)
+                      }}
+                      className="text-white hover:bg-white/20"
+                    >
+                      <Eye className="h-5 w-5" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        downloadImage(image)
+                      }}
                       className="text-white hover:bg-white/20"
                     >
                       <Download className="h-5 w-5" />
@@ -84,7 +104,10 @@ export default function PreviewListPage() {
                     <Button
                       size="icon"
                       variant="ghost"
-                      onClick={() => deleteImage(image.id)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteImage(image.id)
+                      }}
                       className="text-white hover:bg-white/20"
                     >
                       <Trash2 className="h-5 w-5" />
@@ -107,6 +130,55 @@ export default function PreviewListPage() {
           </div>
         )}
       </div>
+
+      {/* プレビューモーダル */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4" onClick={() => setSelectedImage(null)}>
+          <div className="relative max-h-full max-w-4xl">
+            <img
+              src={selectedImage.dataUrl}
+              alt={`撮影日時: ${new Date(selectedImage.timestamp).toLocaleString("ja-JP")}`}
+              className="max-h-[90vh] w-full object-contain"
+            />
+            
+            {/* 閉じるボタン */}
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setSelectedImage(null)}
+              className="absolute right-2 top-2 bg-black/50 text-white hover:bg-black/70"
+            >
+              <X className="h-6 w-6" />
+            </Button>
+
+            {/* 操作ボタン */}
+            <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2">
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  downloadImage(selectedImage)
+                }}
+                variant="ghost"
+                className="bg-black/50 text-white hover:bg-black/70"
+              >
+                <Download className="mr-2 h-5 w-5" />
+                ダウンロード
+              </Button>
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  deleteImage(selectedImage.id)
+                }}
+                variant="ghost"
+                className="bg-black/50 text-white hover:bg-black/70"
+              >
+                <Trash2 className="mr-2 h-5 w-5" />
+                削除
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

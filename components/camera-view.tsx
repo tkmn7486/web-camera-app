@@ -31,13 +31,25 @@ export default function CameraView() {
   const [cameras, setCameras] = useState<CameraDevice[]>([])
   const [currentCameraIndex, setCurrentCameraIndex] = useState(0)
   const [showCameraSelector, setShowCameraSelector] = useState(false)
+  const [isLandscape, setIsLandscape] = useState(false)
 
   useEffect(() => {
     loadLastImage()
     // 初回アクセスでカメラ権限を取得してから列挙
     initializeCameras()
+    
+    // 画面の向きを検出
+    const checkOrientation = () => {
+      setIsLandscape(window.innerWidth > window.innerHeight)
+    }
+    checkOrientation()
+    window.addEventListener('resize', checkOrientation)
+    window.addEventListener('orientationchange', checkOrientation)
+    
     return () => {
       stopCamera()
+      window.removeEventListener('resize', checkOrientation)
+      window.removeEventListener('orientationchange', checkOrientation)
     }
   }, [])
 
@@ -144,11 +156,13 @@ export default function CameraView() {
       const video = videoRef.current
       const canvas = canvasRef.current
 
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-
+      // コンテキストを取得してからサイズを設定
       const ctx = canvas.getContext("2d")
-      if (ctx) {
+      if (ctx && video.readyState >= 2) {  // readyState 2以上でバッファにデータあり
+        // キャンバスサイズを設定（これで自動的にクリアされる）
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+
         // ズームを適用して描画
         ctx.save()
         ctx.translate(canvas.width / 2, canvas.height / 2)
@@ -176,6 +190,9 @@ export default function CameraView() {
         setTimeout(() => {
           setIsCapturing(false)
         }, 200)
+      } else {
+        // バッファにデータが無い場合はエラー
+        setIsCapturing(false)
       }
     }
   }
@@ -187,10 +204,10 @@ export default function CameraView() {
   return (
     <div className="relative flex h-screen flex-col bg-black">
       {/* ヘッダー */}
-      <div className="absolute left-0 right-0 top-0 z-20 flex items-center justify-between p-4">
+      <div className={`absolute left-0 right-0 top-0 z-20 flex items-center justify-between ${isLandscape ? 'p-2' : 'p-4'}`}>
         <Link href="/">
-          <Button variant="ghost" size="icon" className="text-white hover:bg-white/10">
-            <ArrowLeft className="h-6 w-6" />
+          <Button variant="ghost" size="icon" className={isLandscape ? "text-white hover:bg-white/10 h-8 w-8" : "text-white hover:bg-white/10"}>
+            <ArrowLeft className={isLandscape ? "h-5 w-5" : "h-6 w-6"} />
           </Button>
         </Link>
         <div className="flex gap-2">
@@ -199,27 +216,27 @@ export default function CameraView() {
               variant="ghost"
               size="icon"
               onClick={() => setShowCameraSelector(!showCameraSelector)}
-              className="text-white hover:bg-white/10"
+              className={isLandscape ? "text-white hover:bg-white/10 h-8 w-8" : "text-white hover:bg-white/10"}
               title="カメラを選択"
             >
-              <Camera className="h-5 w-5" />
+              <Camera className={isLandscape ? "h-4 w-4" : "h-5 w-5"} />
             </Button>
           )}
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setShowGrid(!showGrid)}
-            className={`text-white hover:bg-white/10 ${showGrid ? "bg-white/20" : ""}`}
+            className={isLandscape ? `text-white hover:bg-white/10 h-8 w-8 ${showGrid ? "bg-white/20" : ""}` : `text-white hover:bg-white/10 ${showGrid ? "bg-white/20" : ""}`}
           >
-            <Grid3x3 className="h-5 w-5" />
+            <Grid3x3 className={isLandscape ? "h-4 w-4" : "h-5 w-5"} />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setShowHorizon(!showHorizon)}
-            className={`text-white hover:bg-white/10 ${showHorizon ? "bg-white/20" : ""}`}
+            className={isLandscape ? `text-white hover:bg-white/10 h-8 w-8 ${showHorizon ? "bg-white/20" : ""}` : `text-white hover:bg-white/10 ${showHorizon ? "bg-white/20" : ""}`}
           >
-            <Minus className="h-5 w-5" />
+            <Minus className={isLandscape ? "h-4 w-4" : "h-5 w-5"} />
           </Button>
         </div>
       </div>
@@ -282,7 +299,7 @@ export default function CameraView() {
 
       {/* カメラセレクター */}
       {showCameraSelector && cameras.length > 1 && (
-        <div className="absolute inset-x-0 top-20 z-30 mx-4">
+        <div className={`absolute inset-x-0 z-30 mx-4 ${isLandscape ? 'top-12 right-8 w-48' : 'top-20'}`}>
           <div className="rounded-lg bg-black/90 border border-white/20 p-3 backdrop-blur-sm">
             <div className="text-white text-xs font-medium mb-2 px-2">カメラを選択</div>
             <div className="flex flex-col gap-1">
@@ -293,7 +310,7 @@ export default function CameraView() {
                     setCurrentCameraIndex(index)
                     setShowCameraSelector(false)
                   }}
-                  className={`text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                  className={`text-left px-3 py-2 rounded-md ${isLandscape ? 'text-xs' : 'text-sm'} transition-colors ${
                     currentCameraIndex === index
                       ? "bg-white/20 text-white font-medium"
                       : "text-white/70 hover:bg-white/10"
@@ -308,10 +325,10 @@ export default function CameraView() {
       )}
 
       {/* コントロール */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 bg-linear-to-t from-black/80 to-transparent p-6">
-        <div className="flex items-center justify-between">
+      <div className={`absolute bottom-0 left-0 right-0 z-20 bg-linear-to-t from-black/80 to-transparent ${isLandscape ? 'p-3' : 'p-6'}`}>
+        <div className={`flex items-center ${isLandscape ? 'justify-between px-6' : 'justify-between'}`}>
           {/* サムネイル */}
-          <Link href="/preview-list" className="h-14 w-14">
+          <Link href="/preview-list" className={isLandscape ? 'h-12 w-12' : 'h-14 w-14'}>
             {lastImage ? (
               <img
                 src={lastImage || "/placeholder.svg"}
@@ -328,9 +345,9 @@ export default function CameraView() {
             onClick={capturePhoto}
             disabled={isCapturing}
             size="icon"
-            className="h-20 w-20 rounded-full border-4 border-white bg-white/20 hover:bg-white/30"
+            className={isLandscape ? "h-16 w-16 rounded-full border-4 border-white bg-white/20 hover:bg-white/30" : "h-20 w-20 rounded-full border-4 border-white bg-white/20 hover:bg-white/30"}
           >
-            <Circle className="h-16 w-16 fill-white text-white" />
+            <Circle className={isLandscape ? "h-12 w-12 fill-white text-white" : "h-16 w-16 fill-white text-white"} />
           </Button>
 
           {/* ズームコントロール */}
@@ -340,9 +357,9 @@ export default function CameraView() {
               size="icon"
               onClick={() => adjustZoom(0.5)}
               disabled={zoom >= 3}
-              className="text-white hover:bg-white/10"
+              className={isLandscape ? "text-white hover:bg-white/10 h-8 w-8" : "text-white hover:bg-white/10"}
             >
-              <ZoomIn className="h-6 w-6" />
+              <ZoomIn className={isLandscape ? "h-4 w-4" : "h-6 w-6"} />
             </Button>
             <div className="text-center text-sm font-medium text-white">{zoom.toFixed(1)}x</div>
             <Button
@@ -350,9 +367,9 @@ export default function CameraView() {
               size="icon"
               onClick={() => adjustZoom(-0.5)}
               disabled={zoom <= 1}
-              className="text-white hover:bg-white/10"
+              className={isLandscape ? "text-white hover:bg-white/10 h-8 w-8" : "text-white hover:bg-white/10"}
             >
-              <ZoomOut className="h-6 w-6" />
+              <ZoomOut className={isLandscape ? "h-4 w-4" : "h-6 w-6"} />
             </Button>
           </div>
         </div>
