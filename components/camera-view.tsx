@@ -79,7 +79,7 @@ export default function CameraView() {
         video:
           cameras.length > 0 && cameras[currentCameraIndex]
             ? {
-                deviceId: { exact: cameras[currentCameraIndex].deviceId },
+                deviceId: cameras[currentCameraIndex].deviceId,
                 width: { ideal: 1920 },
                 height: { ideal: 1080 },
               }
