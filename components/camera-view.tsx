@@ -250,40 +250,45 @@ export default function CameraView() {
       const video = videoRef.current
       const canvas = canvasRef.current
 
-      // コンテキストを取得してからサイズを設定
-      const ctx = canvas.getContext("2d")
-      if (ctx && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {  // サイズが正しく取得できているか確認
-        // キャンバスサイズを設定（これで自動的にクリアされる）
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        // キャンバスサイズを先に設定
         canvas.width = video.videoWidth
         canvas.height = video.videoHeight
+        
+        // サイズ設定後にコンテキストを取得
+        const ctx = canvas.getContext("2d")
+        if (ctx) {
+          // ズームを適用して描画
+          ctx.save()
+          ctx.translate(canvas.width / 2, canvas.height / 2)
+          ctx.scale(zoom, zoom)
+          ctx.translate(-canvas.width / 2, -canvas.height / 2)
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          ctx.restore()
 
-        // ズームを適用して描画
-        ctx.save()
-        ctx.translate(canvas.width / 2, canvas.height / 2)
-        ctx.scale(zoom, zoom)
-        ctx.translate(-canvas.width / 2, -canvas.height / 2)
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        ctx.restore()
+          const imageData = canvas.toDataURL("image/png")
 
-        const imageData = canvas.toDataURL("image/png")
+          // ローカルストレージに保存
+          const savedImages = localStorage.getItem("camera-images")
+          const images: SavedImage[] = savedImages ? JSON.parse(savedImages) : []
+          const newImage: SavedImage = {
+            id: Date.now().toString(),
+            dataUrl: imageData,
+            timestamp: Date.now(),
+          }
+          images.push(newImage)
+          localStorage.setItem("camera-images", JSON.stringify(images))
 
-        // ローカルストレージに保存
-        const savedImages = localStorage.getItem("camera-images")
-        const images: SavedImage[] = savedImages ? JSON.parse(savedImages) : []
-        const newImage: SavedImage = {
-          id: Date.now().toString(),
-          dataUrl: imageData,
-          timestamp: Date.now(),
-        }
-        images.push(newImage)
-        localStorage.setItem("camera-images", JSON.stringify(images))
+          setLastImage(imageData)
 
-        setLastImage(imageData)
-
-        // シャッターエフェクト
-        setTimeout(() => {
+          // シャッターエフェクト
+          setTimeout(() => {
+            setIsCapturing(false)
+          }, 200)
+        } else {
+          console.error("Canvas context取得失敗")
           setIsCapturing(false)
-        }, 200)
+        }
       } else {
         // バッファにデータが無い場合はエラー
         console.error("カメラの準備ができていません", {
