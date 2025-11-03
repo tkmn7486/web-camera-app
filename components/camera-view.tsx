@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, ZoomIn, ZoomOut, Grid3x3, Minus, Circle, AlertCircle, RefreshCw, Camera, Clock } from "lucide-react"
 import Link from "next/link"
+import { saveImage, getLatestImage, initDB } from "@/lib/indexeddb"
 
 interface SavedImage {
   id: string
@@ -81,10 +82,14 @@ export default function CameraView() {
     // バッファリングループ
     const bufferLoop = () => {
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-        bufferCanvas.width = video.videoWidth
-        bufferCanvas.height = video.videoHeight
         const ctx = bufferCanvas.getContext("2d")
         if (ctx) {
+          // 初回のみキャンバスサイズを設定
+          if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
+            bufferCanvas.width = video.videoWidth
+            bufferCanvas.height = video.videoHeight
+          }
+          
           ctx.drawImage(video, 0, 0, bufferCanvas.width, bufferCanvas.height)
           const imageData = ctx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height)
           
@@ -102,6 +107,12 @@ export default function CameraView() {
     
     // ディスプレイループ（1秒前のフレームを表示）
     const displayLoop = () => {
+      // フレームが無い場合はスキップ
+      if (frames.length === 0) {
+        animationId = requestAnimationFrame(displayLoop)
+        return
+      }
+      
       const now = Date.now()
       const targetTime = now - 1000 // 1秒前
       
@@ -113,11 +124,19 @@ export default function CameraView() {
         }
       }
       
+      // 最古のフレームよりも新しい場合は最古のフレームを使用
+      if (closestFrame.timestamp > targetTime && frames.length > 0) {
+        closestFrame = frames[0]
+      }
+      
       if (closestFrame && displayCanvas) {
-        displayCanvas.width = closestFrame.data.width
-        displayCanvas.height = closestFrame.data.height
         const ctx = displayCanvas.getContext("2d")
         if (ctx) {
+          // 初回のみキャンバスサイズを設定
+          if (displayCanvas.width === 0 || displayCanvas.height === 0) {
+            displayCanvas.width = closestFrame.data.width
+            displayCanvas.height = closestFrame.data.height
+          }
           ctx.putImageData(closestFrame.data, 0, 0)
         }
       }
@@ -164,13 +183,15 @@ export default function CameraView() {
     }
   }
 
-  const loadLastImage = () => {
-    const savedImages = localStorage.getItem("camera-images")
-    if (savedImages) {
-      const images: SavedImage[] = JSON.parse(savedImages)
-      if (images.length > 0) {
-        setLastImage(images[images.length - 1].dataUrl)
+  const loadLastImage = async () => {
+    try {
+      await initDB()
+      const latestImage = await getLatestImage()
+      if (latestImage) {
+        setLastImage(latestImage.dataUrl)
       }
+    } catch (err) {
+      console.error("最新画像の読み込みに失敗しました:", err)
     }
   }
 
@@ -244,20 +265,21 @@ export default function CameraView() {
     }
   }
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (videoRef.current && canvasRef.current && !isCapturing) {
       setIsCapturing(true)
       const video = videoRef.current
       const canvas = canvasRef.current
 
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-        // キャンバスサイズを先に設定
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        
-        // サイズ設定後にコンテキストを取得
         const ctx = canvas.getContext("2d")
         if (ctx) {
+          // キャンバスサイズを変更する場合のみ設定（サイズ変更は画面上のキャンバスをクリアしてしまうため）
+          if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+            canvas.width = video.videoWidth
+            canvas.height = video.videoHeight
+          }
+          
           // ズームを適用して描画
           ctx.save()
           ctx.translate(canvas.width / 2, canvas.height / 2)
@@ -268,18 +290,22 @@ export default function CameraView() {
 
           const imageData = canvas.toDataURL("image/png")
 
-          // ローカルストレージに保存
-          const savedImages = localStorage.getItem("camera-images")
-          const images: SavedImage[] = savedImages ? JSON.parse(savedImages) : []
+          // IndexedDBに保存
           const newImage: SavedImage = {
             id: Date.now().toString(),
             dataUrl: imageData,
             timestamp: Date.now(),
           }
-          images.push(newImage)
-          localStorage.setItem("camera-images", JSON.stringify(images))
-
-          setLastImage(imageData)
+          
+          try {
+            await initDB()
+            await saveImage(newImage)
+            setLastImage(imageData)
+          } catch (err) {
+            console.error("画像の保存に失敗しました", err)
+            setIsCapturing(false)
+            return
+          }
 
           // シャッターエフェクト
           setTimeout(() => {

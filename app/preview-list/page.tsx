@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ArrowLeft, Download, Trash2, X, Eye } from "lucide-react"
+import { getAllImages, deleteImage as deleteImageFromDB, initDB } from "@/lib/indexeddb"
 
 interface SavedImage {
   id: string
@@ -17,11 +18,19 @@ export default function PreviewListPage() {
   const [selectedImage, setSelectedImage] = useState<SavedImage | null>(null)
 
   useEffect(() => {
-    // ローカルストレージから保存された画像を読み込む
-    const savedImages = localStorage.getItem("camera-images")
-    if (savedImages) {
-      setImages(JSON.parse(savedImages))
+    // IndexedDBから保存された画像を読み込む
+    const loadImages = async () => {
+      try {
+        await initDB()
+        const loadedImages = await getAllImages()
+        // タイムスタンプでソート（新しい順）
+        const sortedImages = loadedImages.sort((a, b) => b.timestamp - a.timestamp)
+        setImages(sortedImages)
+      } catch (err) {
+        console.error("画像の読み込みに失敗しました:", err)
+      }
     }
+    loadImages()
   }, [])
 
   const downloadImage = (image: SavedImage) => {
@@ -31,13 +40,17 @@ export default function PreviewListPage() {
     link.click()
   }
 
-  const deleteImage = (id: string) => {
-    const updatedImages = images.filter((img) => img.id !== id)
-    setImages(updatedImages)
-    localStorage.setItem("camera-images", JSON.stringify(updatedImages))
-    // プレビュー中の画像を削除した場合は閉じる
-    if (selectedImage?.id === id) {
-      setSelectedImage(null)
+  const deleteImage = async (id: string) => {
+    try {
+      await deleteImageFromDB(id)
+      const updatedImages = images.filter((img) => img.id !== id)
+      setImages(updatedImages)
+      // プレビュー中の画像を削除した場合は閉じる
+      if (selectedImage?.id === id) {
+        setSelectedImage(null)
+      }
+    } catch (err) {
+      console.error("画像の削除に失敗しました:", err)
     }
   }
 
