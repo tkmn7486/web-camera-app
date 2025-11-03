@@ -77,6 +77,10 @@ export default function PreviewListPage() {
                     alt={`撮影日時: ${new Date(image.timestamp).toLocaleString("ja-JP")}`}
                     className="h-full w-full object-cover cursor-pointer"
                     onClick={() => setSelectedImage(image)}
+                    onTouchEnd={(e) => {
+                      e.preventDefault()
+                      setSelectedImage(image)
+                    }}
                   />
                   <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button

@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, ZoomIn, ZoomOut, Grid3x3, Minus, Circle, AlertCircle, RefreshCw, Camera } from "lucide-react"
+import { ArrowLeft, ZoomIn, ZoomOut, Grid3x3, Minus, Circle, AlertCircle, RefreshCw, Camera, Clock } from "lucide-react"
 import Link from "next/link"
 
 interface SavedImage {
@@ -21,6 +21,8 @@ export default function CameraView() {
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const bufferCanvasRef = useRef<HTMLCanvasElement>(null)
+  const displayCanvasRef = useRef<HTMLCanvasElement>(null)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -32,6 +34,7 @@ export default function CameraView() {
   const [currentCameraIndex, setCurrentCameraIndex] = useState(0)
   const [showCameraSelector, setShowCameraSelector] = useState(false)
   const [isLandscape, setIsLandscape] = useState(false)
+  const [lateShotEnabled, setLateShotEnabled] = useState(false)
 
   useEffect(() => {
     loadLastImage()
@@ -58,6 +61,79 @@ export default function CameraView() {
       startCamera()
     }
   }, [currentCameraIndex, cameras])
+
+  // 遅延撮影モードのアニメーション
+  useEffect(() => {
+    if (!lateShotEnabled || !videoRef.current || !bufferCanvasRef.current || !displayCanvasRef.current) {
+      return
+    }
+
+    const video = videoRef.current
+    const bufferCanvas = bufferCanvasRef.current
+    const displayCanvas = displayCanvasRef.current
+    
+    // フレームバッファ（30fpsで最大1秒=30フレーム）
+    const frames: { data: ImageData; timestamp: number }[] = []
+    const maxFrames = 30
+    
+    let animationId: number
+    
+    // バッファリングループ
+    const bufferLoop = () => {
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        bufferCanvas.width = video.videoWidth
+        bufferCanvas.height = video.videoHeight
+        const ctx = bufferCanvas.getContext("2d")
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, bufferCanvas.width, bufferCanvas.height)
+          const imageData = ctx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height)
+          
+          // フレームバッファに追加
+          frames.push({ data: imageData, timestamp: Date.now() })
+          
+          // 最大フレーム数を超えたら古いものを削除
+          if (frames.length > maxFrames) {
+            frames.shift()
+          }
+        }
+      }
+      setTimeout(bufferLoop, 33) // 約30fps
+    }
+    
+    // ディスプレイループ（1秒前のフレームを表示）
+    const displayLoop = () => {
+      const now = Date.now()
+      const targetTime = now - 1000 // 1秒前
+      
+      // 1秒前に最も近いフレームを探す
+      let closestFrame = frames[0]
+      for (const frame of frames) {
+        if (frame.timestamp <= targetTime && frame.timestamp > (closestFrame?.timestamp || 0)) {
+          closestFrame = frame
+        }
+      }
+      
+      if (closestFrame && displayCanvas) {
+        displayCanvas.width = closestFrame.data.width
+        displayCanvas.height = closestFrame.data.height
+        const ctx = displayCanvas.getContext("2d")
+        if (ctx) {
+          ctx.putImageData(closestFrame.data, 0, 0)
+        }
+      }
+      
+      animationId = requestAnimationFrame(displayLoop)
+    }
+    
+    bufferLoop()
+    displayLoop()
+    
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId)
+      }
+    }
+  }, [lateShotEnabled])
 
   const initializeCameras = async () => {
     try {
@@ -124,6 +200,24 @@ export default function CameraView() {
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
         setStream(mediaStream)
+        
+        // スマホでメタデータ読み込み完了を待つ
+        await new Promise<void>((resolve) => {
+          const video = videoRef.current
+          if (video) {
+            const onLoadedMetadata = () => {
+              video.removeEventListener('loadedmetadata', onLoadedMetadata)
+              resolve()
+            }
+            video.addEventListener('loadedmetadata', onLoadedMetadata)
+            // すでに読み込み済みの場合は即座に解決
+            if (video.readyState >= 2) {
+              resolve()
+            }
+          } else {
+            resolve()
+          }
+        })
       }
     } catch (err: any) {
       let errorMessage = "カメラへのアクセスが拒否されました"
@@ -158,7 +252,7 @@ export default function CameraView() {
 
       // コンテキストを取得してからサイズを設定
       const ctx = canvas.getContext("2d")
-      if (ctx && video.readyState >= 2) {  // readyState 2以上でバッファにデータあり
+      if (ctx && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {  // サイズが正しく取得できているか確認
         // キャンバスサイズを設定（これで自動的にクリアされる）
         canvas.width = video.videoWidth
         canvas.height = video.videoHeight
@@ -192,6 +286,11 @@ export default function CameraView() {
         }, 200)
       } else {
         // バッファにデータが無い場合はエラー
+        console.error("カメラの準備ができていません", {
+          readyState: video.readyState,
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+        })
         setIsCapturing(false)
       }
     }
@@ -238,6 +337,15 @@ export default function CameraView() {
           >
             <Minus className={isLandscape ? "h-4 w-4" : "h-5 w-5"} />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLateShotEnabled(!lateShotEnabled)}
+            className={isLandscape ? `text-white hover:bg-white/10 h-8 w-8 ${lateShotEnabled ? "bg-white/20" : ""}` : `text-white hover:bg-white/10 ${lateShotEnabled ? "bg-white/20" : ""}`}
+            title="遅延撮影モード"
+          >
+            <Clock className={isLandscape ? "h-4 w-4" : "h-5 w-5"} />
+          </Button>
         </div>
       </div>
 
@@ -260,14 +368,25 @@ export default function CameraView() {
           </div>
         ) : (
           <>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="h-full w-full object-cover"
-              style={{ transform: `scale(${zoom})` }}
-            />
+            {lateShotEnabled ? (
+              <>
+                <video ref={videoRef} autoPlay playsInline muted className="hidden" />
+                <canvas
+                  ref={displayCanvasRef}
+                  className="h-full w-full object-cover"
+                  style={{ transform: `scale(${zoom})` }}
+                />
+              </>
+            ) : (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="h-full w-full object-cover"
+                style={{ transform: `scale(${zoom})` }}
+              />
+            )}
 
             {/* グリッド線 */}
             {showGrid && (
@@ -295,6 +414,7 @@ export default function CameraView() {
         )}
 
         <canvas ref={canvasRef} className="hidden" />
+        <canvas ref={bufferCanvasRef} className="hidden" />
       </div>
 
       {/* カメラセレクター */}
