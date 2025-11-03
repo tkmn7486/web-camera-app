@@ -1,36 +1,154 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WebCamera
 
-## Getting Started
+プロフェッショナルなブラウザベースカメラアプリ。Next.js、React、Tailwind CSSで構築されています。
 
-First, run the development server:
+## 主な機能
+
+- 📱 **PWA対応**: スマートフォンやPCにアプリとしてインストール可能
+- 📸 高品質な写真撮影
+- 🔍 ズーム機能（1x〜3x）
+- 📐 グリッド線と水平線の表示
+- 📷 複数カメラの切り替え対応
+- 🖼️ 撮影した写真のローカルストレージ保存
+- 🎨 シンプルでモダンなUI
+
+## 技術スタック
+
+- **フレームワーク**: Next.js 16 (App Router)
+- **UIライブラリ**: React 19
+- **スタイリング**: Tailwind CSS 4
+- **UIコンポーネント**: Radix UI
+- **型安全性**: TypeScript
+
+## セットアップ
+
+### 必要要件
+
+- Node.js 22以上
+- npm、yarn、pnpm、またはbun
+
+### インストール
+
+```bash
+npm install
+```
+
+### 開発サーバーの起動
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+ブラウザで [http://localhost:3000](http://localhost:3000) を開いて結果を確認できます。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### ビルド
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+```
 
-## Learn More
+### 本番環境で起動
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Netlifyへのデプロイ
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 方法1: Netlify自動検出（推奨）
 
-## Deploy on Vercel
+1. **GitHubにリポジトリをプッシュ**
+   ```bash
+   git add .
+   git commit -m "Initial commit"
+   git push origin main
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+2. **Netlifyで新しいサイトを作成**
+   - [Netlify](https://www.netlify.com/)にアクセスしてログイン
+   - 「Add new site」→「Import an existing project」をクリック
+   - GitHubアカウントを連携（初回のみ）
+   - デプロイしたいリポジトリを選択
+   - 「Deploy site」をクリック
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **自動設定**
+   - Next.js 16の場合、Netlifyが自動的に設定を検出
+   - ビルドコマンド: `npm run build`
+   - 公開ディレクトリ: 自動設定
+
+### 方法2: Netlify CLI
+
+```bash
+# Netlify CLIをインストール
+npm install -g netlify-cli
+
+# ログイン
+netlify login
+
+# サイトを初期化
+netlify init
+
+# デプロイ
+netlify deploy --prod
+```
+
+### 環境変数（必要に応じて）
+
+Netlifyダッシュボード → Site settings → Environment variables から環境変数を設定できます。
+
+## PWAとしてインストール
+
+このアプリはPWA（Progressive Web App）対応しており、デバイスにアプリとしてインストールできます。
+
+### iOS (Safari)
+
+1. Safariでアプリを開く
+2. 画面下部の共有ボタン（□↑）をタップ
+3. 「ホーム画面に追加」を選択
+4. 「追加」をタップ
+
+### Android (Chrome/Edge)
+
+1. ブラウザでアプリを開く
+2. 画面下部に表示される「インストール」バナーをタップ
+3. または、メニュー（⋮）から「アプリをインストール」を選択
+
+### PC (Chrome/Edge)
+
+1. ブラウザでアプリを開く
+2. アドレスバーの右側に表示される「インストール」アイコンをクリック
+3. 「インストール」をクリック
+
+インストール後は、ネイティブアプリのように起動できます。
+
+### PWAアイコンの作成
+
+PWAとしてインストールするには、アイコン画像が必要です。以下のサイズのアイコンを作成して`public`ディレクトリに配置してください：
+
+- `icon-192.png` - 192x192px
+- `icon-512.png` - 512x512px
+
+アイコン作成ツール:
+- [PWA Asset Generator](https://www.pwabuilder.com/imageGenerator)
+- [RealFaviconGenerator](https://realfavicongenerator.net/)
+- [Canva](https://www.canva.com/) など
+
+## カメラアクセスの許可
+
+このアプリはブラウザのカメラAPIを使用します。初回起動時にブラウザからカメラへのアクセス許可を求められる場合があります。
+
+### カメラが利用できない場合
+
+1. ブラウザの設定を確認してください
+2. 他のアプリケーションがカメラを使用していないか確認してください
+3. カメラが正しく接続されているか確認してください
+
+## ライセンス
+
+MIT License
+
+## 参考リンク
+
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
+- [Radix UI Documentation](https://www.radix-ui.com/)

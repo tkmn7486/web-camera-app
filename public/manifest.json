@@ -1,0 +1,51 @@
+{
+  "name": "WebCamera - プロフェッショナルカメラアプリ",
+  "short_name": "WebCamera",
+  "description": "ブラウザで使えるプロフェッショナルなカメラアプリ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["photography", "utilities"],
+  "shortcuts": [
+    {
+      "name": "撮影する",
+      "short_name": "撮影",
+      "description": "カメラを起動して撮影",
+      "url": "/camera",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "ギャラリー",
+      "short_name": "ギャラリー",
+      "description": "撮影した写真を確認",
+      "url": "/preview-list",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
