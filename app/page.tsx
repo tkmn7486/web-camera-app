@@ -6,7 +6,7 @@ export default function Page() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-black p-4 md:p-8">
       <div className="text-center">
-        <h1 className="text-5xl font-bold tracking-tight text-white md:text-6xl">カメラアプリ</h1>
+        <h1 className="text-5xl font-bold tracking-tight text-white md:text-6xl">WebCamera</h1>
         <p className="mt-4 text-lg text-white/70">プロフェッショナルな撮影体験</p>
       </div>
 
@@ -33,7 +33,7 @@ export default function Page() {
       </div>
 
       <div className="text-center text-sm text-white/50">
-        <p>ブラウザベースのプロフェッショナルカメラアプリ</p>
+        <p>ブラウザベースのプロフェッショナルカメラアプリ「WebCamera」</p>
       </div>
     </main>
   )

@@ -89,7 +89,7 @@ export default function CameraApp() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 p-4 md:p-8">
       <div className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight text-foreground md:text-5xl">カメラアプリ</h1>
+        <h1 className="text-4xl font-bold tracking-tight text-foreground md:text-5xl">WebCamera</h1>
         <p className="mt-2 text-lg text-muted-foreground">ブラウザで簡単に写真撮影</p>
       </div>
 
