@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, ZoomIn, ZoomOut, Grid3x3, Minus, Circle, SwitchCamera, AlertCircle, RefreshCw } from "lucide-react"
+import { ArrowLeft, ZoomIn, ZoomOut, Grid3x3, Minus, Circle, AlertCircle, RefreshCw, Camera } from "lucide-react"
 import Link from "next/link"
 
 interface SavedImage {
@@ -30,10 +30,12 @@ export default function CameraView() {
   const [isCapturing, setIsCapturing] = useState(false)
   const [cameras, setCameras] = useState<CameraDevice[]>([])
   const [currentCameraIndex, setCurrentCameraIndex] = useState(0)
+  const [showCameraSelector, setShowCameraSelector] = useState(false)
 
   useEffect(() => {
-    enumerateCameras()
     loadLastImage()
+    // 初回アクセスでカメラ権限を取得してから列挙
+    initializeCameras()
     return () => {
       stopCamera()
     }
@@ -44,6 +46,20 @@ export default function CameraView() {
       startCamera()
     }
   }, [currentCameraIndex, cameras])
+
+  const initializeCameras = async () => {
+    try {
+      // まず仮アクセスで権限を取得
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      tempStream.getTracks().forEach(track => track.stop())
+      
+      // 権限取得後に列挙（これでラベルが取得できる）
+      await enumerateCameras()
+    } catch (err) {
+      console.error("カメラ初期化エラー:", err)
+      setError("カメラへのアクセスが拒否されました。ブラウザの設定を確認してください。")
+    }
+  }
 
   const enumerateCameras = async () => {
     try {
@@ -84,7 +100,7 @@ export default function CameraView() {
                 height: { ideal: 1080 },
               }
             : {
-                facingMode: "user",
+                facingMode: "environment",  // 外カメラをデフォルトに
                 width: { ideal: 1920 },
                 height: { ideal: 1080 },
               },
@@ -106,6 +122,8 @@ export default function CameraView() {
         errorMessage = "カメラが見つかりませんでした。カメラが接続されているか確認してください。"
       } else if (err.name === "NotReadableError") {
         errorMessage = "カメラが使用中です。他のアプリケーションがカメラを使用していないか確認してください。"
+      } else if (err.name === "OverconstrainedError") {
+        errorMessage = "選択したカメラが利用できません。別のカメラを試してください。"
       }
       
       setError(errorMessage)
@@ -117,12 +135,6 @@ export default function CameraView() {
     if (stream) {
       stream.getTracks().forEach((track) => track.stop())
       setStream(null)
-    }
-  }
-
-  const switchCamera = () => {
-    if (cameras.length > 1) {
-      setCurrentCameraIndex((prev) => (prev + 1) % cameras.length)
     }
   }
 
@@ -186,11 +198,11 @@ export default function CameraView() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={switchCamera}
+              onClick={() => setShowCameraSelector(!showCameraSelector)}
               className="text-white hover:bg-white/10"
-              title={`現在: ${cameras[currentCameraIndex]?.label || "カメラ"}`}
+              title="カメラを選択"
             >
-              <SwitchCamera className="h-5 w-5" />
+              <Camera className="h-5 w-5" />
             </Button>
           )}
           <Button
@@ -267,6 +279,33 @@ export default function CameraView() {
 
         <canvas ref={canvasRef} className="hidden" />
       </div>
+
+      {/* カメラセレクター */}
+      {showCameraSelector && cameras.length > 1 && (
+        <div className="absolute inset-x-0 top-20 z-30 mx-4">
+          <div className="rounded-lg bg-black/90 border border-white/20 p-3 backdrop-blur-sm">
+            <div className="text-white text-xs font-medium mb-2 px-2">カメラを選択</div>
+            <div className="flex flex-col gap-1">
+              {cameras.map((camera, index) => (
+                <button
+                  key={camera.deviceId}
+                  onClick={() => {
+                    setCurrentCameraIndex(index)
+                    setShowCameraSelector(false)
+                  }}
+                  className={`text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    currentCameraIndex === index
+                      ? "bg-white/20 text-white font-medium"
+                      : "text-white/70 hover:bg-white/10"
+                  }`}
+                >
+                  {camera.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* コントロール */}
       <div className="absolute bottom-0 left-0 right-0 z-20 bg-linear-to-t from-black/80 to-transparent p-6">
