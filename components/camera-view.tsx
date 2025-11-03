@@ -22,7 +22,6 @@ export default function CameraView() {
   const router = useRouter()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const bufferCanvasRef = useRef<HTMLCanvasElement>(null)
   const displayCanvasRef = useRef<HTMLCanvasElement>(null)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -36,6 +35,7 @@ export default function CameraView() {
   const [showCameraSelector, setShowCameraSelector] = useState(false)
   const [isLandscape, setIsLandscape] = useState(false)
   const [lateShotEnabled, setLateShotEnabled] = useState(false)
+  const [useWebCodecs, setUseWebCodecs] = useState(false)
 
   useEffect(() => {
     loadLastImage()
@@ -63,96 +63,216 @@ export default function CameraView() {
     }
   }, [currentCameraIndex, cameras])
 
-  // 遅延撮影モードのアニメーション
+  // 遅延撮影モードのアニメーション（Canvas版は重くて実用的ではないため無効化）
   useEffect(() => {
-    if (!lateShotEnabled || !videoRef.current || !bufferCanvasRef.current || !displayCanvasRef.current) {
+    // console.log('[LateShot] Effect triggered', { lateShotEnabled, hasVideo: !!videoRef.current })
+    
+    // 一時的に機能を無効化
+    return
+    
+    if (!lateShotEnabled || !videoRef.current) {
       return
     }
 
     const video = videoRef.current
-    const bufferCanvas = bufferCanvasRef.current
-    const displayCanvas = displayCanvasRef.current
+    const delayMs = 1000
+    const fps = 30
+    const maxFrames = Math.ceil((delayMs / 1000) * fps)
     
-    // フレームバッファ（30fpsで最大1秒=30フレーム）
-    const frames: { data: ImageData; timestamp: number }[] = []
-    const maxFrames = 30
+    // WebCodecs対応チェック
+    const supportsWebCodecs = 
+      'MediaStreamTrackProcessor' in window &&
+      'MediaStreamTrackGenerator' in window &&
+      'VideoFrame' in window
     
-    let animationId: number
+    console.log('[LateShot] WebCodecs supported:', supportsWebCodecs)
     
-    // バッファリングループ
-    const bufferLoop = () => {
-      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-        const ctx = bufferCanvas.getContext("2d")
-        if (ctx) {
-          // 初回のみキャンバスサイズを設定
-          if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
-            bufferCanvas.width = video.videoWidth
-            bufferCanvas.height = video.videoHeight
+    // WebCodecsは一旦無効化（バッファリングの問題で実装が複雑なため）
+    setUseWebCodecs(false)
+    
+    if (false && supportsWebCodecs && stream) {
+      // WebCodecs API使用（Chrome/Edge等）
+      const [track] = stream.getVideoTracks()
+      
+      const processor = new (window as any).MediaStreamTrackProcessor({ track })
+      const generator = new (window as any).MediaStreamTrackGenerator({ kind: 'video' })
+      const reader = processor.readable.getReader()
+      const writer = generator.writable.getWriter()
+      
+      const frameBuffer: any[] = []
+      let isProcessing = false
+      
+      // まず遅延ストリームを設定
+      const delayedStream = new MediaStream([generator])
+      if (videoRef.current) {
+        videoRef.current.srcObject = delayedStream
+        console.log('[LateShot] Delayed stream set to video element')
+      }
+      
+      const processFrame = async () => {
+        if (isProcessing) return
+        isProcessing = true
+        
+        try {
+          const result = await reader.read()
+          const { value: frame, done } = result
+          if (done) {
+            console.log('[LateShot] Reader done')
+            isProcessing = false
+            return
           }
           
-          ctx.drawImage(video, 0, 0, bufferCanvas.width, bufferCanvas.height)
-          const imageData = ctx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height)
+          frameBuffer.push(frame)
           
-          // フレームバッファに追加
-          frames.push({ data: imageData, timestamp: Date.now() })
-          
-          // 最大フレーム数を超えたら古いものを削除
-          if (frames.length > maxFrames) {
-            frames.shift()
+          // 書き込み処理
+          if (frameBuffer.length > maxFrames) {
+            // バッファが満タンなので1秒前のフレームを出力
+            const delayed = frameBuffer.shift()
+            await writer.write(delayed)
+            delayed.close()
+          } else {
+            // バッファが溜まるまでは最新フレームを出力（黒画面を防ぐ）
+            const latest = frameBuffer[frameBuffer.length - 1]
+            await writer.write(latest.clone())
+            console.log('[LateShot] Buffering...', frameBuffer.length, '/', maxFrames)
           }
+          
+          isProcessing = false
+          
+          // 次のフレーム処理をスケジュール
+          setTimeout(() => {
+            processFrame()
+          }, 0)
+        } catch (err) {
+          console.error('[LateShot] WebCodecs error:', err)
+          isProcessing = false
+          setTimeout(() => {
+            processFrame()
+          }, 0)
         }
       }
-      setTimeout(bufferLoop, 33) // 約30fps
-    }
-    
-    // ディスプレイループ（1秒前のフレームを表示）
-    const displayLoop = () => {
-      // フレームが無い場合はスキップ
-      if (frames.length === 0) {
-        animationId = requestAnimationFrame(displayLoop)
+      
+      processFrame()
+      
+      return () => {
+        isProcessing = false
+        reader.cancel()
+        writer.close()
+      }
+    } else {
+      // Canvasフォールバック（Safari等）
+      console.log('[LateShot] Using Canvas fallback', {
+        hasDisplayCanvasRef: !!displayCanvasRef.current,
+        videoReadyState: video.readyState,
+        videoSize: `${video.videoWidth}x${video.videoHeight}`
+      })
+      
+      if (!displayCanvasRef.current) {
+        console.log('[LateShot] No displayCanvas ref')
         return
       }
       
-      const now = Date.now()
-      const targetTime = now - 1000 // 1秒前
+      const displayCanvas = displayCanvasRef.current
+      const displayCtx = displayCanvas.getContext("2d")
       
-      // 1秒前に最も近いフレームを探す
-      let closestFrame = frames[0]
-      for (const frame of frames) {
-        if (frame.timestamp <= targetTime && frame.timestamp > (closestFrame?.timestamp || 0)) {
-          closestFrame = frame
-        }
+      if (!displayCtx) {
+        console.log('[LateShot] No displayCtx')
+        return
       }
       
-      // 最古のフレームよりも新しい場合は最古のフレームを使用
-      if (closestFrame.timestamp > targetTime && frames.length > 0) {
-        closestFrame = frames[0]
+      console.log('[LateShot] DisplayCtx obtained')
+      
+      // 初期サイズを設定
+      if (displayCanvas.width === 0 || displayCanvas.height === 0) {
+        displayCanvas.width = video.videoWidth || 1280
+        displayCanvas.height = video.videoHeight || 720
+        console.log('[LateShot] Canvas sized:', displayCanvas.width, displayCanvas.height)
       }
       
-      if (closestFrame && displayCanvas) {
-        const ctx = displayCanvas.getContext("2d")
-        if (ctx) {
-          // 初回のみキャンバスサイズを設定
-          if (displayCanvas.width === 0 || displayCanvas.height === 0) {
-            displayCanvas.width = closestFrame.data.width
-            displayCanvas.height = closestFrame.data.height
+      const frames: { data: ImageData; timestamp: number }[] = []
+      let bufferLoopId: NodeJS.Timeout
+      let displayLoopId: number
+      
+      console.log('[LateShot] Starting buffer and display loops')
+      
+      // バッファリングループ（30fps）
+      const bufferLoop = () => {
+        console.log('[LateShot] Buffer loop iteration', video.readyState, video.videoWidth, video.videoHeight)
+        if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+          const canvas = document.createElement('canvas')
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+          const ctx = canvas.getContext('2d', { willReadFrequently: true })
+          
+          if (ctx) {
+            console.log('[LateShot] Drawing to buffer canvas')
+            ctx.drawImage(video, 0, 0)
+            console.log('[LateShot] Getting image data')
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            console.log('[LateShot] Image data obtained, size:', imageData.data.length)
+            frames.push({ data: imageData, timestamp: Date.now() })
+            console.log('[LateShot] Frame added, total:', frames.length)
+            
+            if (frames.length > maxFrames) {
+              frames.shift()
+            }
           }
-          ctx.putImageData(closestFrame.data, 0, 0)
         }
+        bufferLoopId = setTimeout(bufferLoop, 33) // 約30fps
       }
       
-      animationId = requestAnimationFrame(displayLoop)
-    }
-    
-    bufferLoop()
-    displayLoop()
-    
-    return () => {
-      if (animationId) {
-        cancelAnimationFrame(animationId)
+      // ディスプレイループ（1秒前のフレームを表示）
+      const displayLoop = () => {
+        // console.log('[LateShot] Display loop iteration')
+        let frameToDisplay: ImageData | null = null
+        
+        if (frames.length > 0) {
+          const now = Date.now()
+          const targetTime = now - delayMs
+          
+          let closestFrame = frames[0]
+          for (const frame of frames) {
+            if (frame.timestamp <= targetTime && frame.timestamp > (closestFrame?.timestamp || 0)) {
+              closestFrame = frame
+            }
+          }
+          
+          if (closestFrame.timestamp > targetTime) {
+            closestFrame = frames[frames.length - 1]
+          }
+          
+          frameToDisplay = closestFrame.data
+        }
+        
+        if (frameToDisplay) {
+          if (displayCanvas.width !== frameToDisplay.width || displayCanvas.height !== frameToDisplay.height) {
+            displayCanvas.width = frameToDisplay.width
+            displayCanvas.height = frameToDisplay.height
+          }
+          displayCtx.putImageData(frameToDisplay, 0, 0)
+        }
+        
+        displayLoopId = requestAnimationFrame(displayLoop)
+      }
+      
+      console.log('[LateShot] Calling bufferLoop and displayLoop')
+      bufferLoop()
+      console.log('[LateShot] bufferLoop called, calling displayLoop')
+      displayLoop()
+      console.log('[LateShot] displayLoop called, loops started')
+      
+      console.log('[LateShot] Loops started')
+      
+      return () => {
+        if (bufferLoopId) {
+          clearTimeout(bufferLoopId)
+        }
+        if (displayLoopId) {
+          cancelAnimationFrame(displayLoopId)
+        }
       }
     }
-  }, [lateShotEnabled])
+  }, [lateShotEnabled, stream])
 
   const initializeCameras = async () => {
     try {
@@ -266,64 +386,111 @@ export default function CameraView() {
   }
 
   const capturePhoto = async () => {
-    if (videoRef.current && canvasRef.current && !isCapturing) {
-      setIsCapturing(true)
-      const video = videoRef.current
-      const canvas = canvasRef.current
+    // 遅延撮影モードの場合はdisplayCanvasから、そうでない場合はvideoから取得
+    const sourceCanvas = lateShotEnabled ? displayCanvasRef.current : null
+    const video = !lateShotEnabled ? videoRef.current : null
+    
+    if (!canvasRef.current || (!sourceCanvas && !video) || isCapturing) {
+      return
+    }
+    
+    setIsCapturing(true)
+    const canvas = canvasRef.current
 
-      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-        const ctx = canvas.getContext("2d")
-        if (ctx) {
-          // キャンバスサイズを変更する場合のみ設定（サイズ変更は画面上のキャンバスをクリアしてしまうため）
-          if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-            canvas.width = video.videoWidth
-            canvas.height = video.videoHeight
-          }
-          
-          // ズームを適用して描画
-          ctx.save()
-          ctx.translate(canvas.width / 2, canvas.height / 2)
-          ctx.scale(zoom, zoom)
-          ctx.translate(-canvas.width / 2, -canvas.height / 2)
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          ctx.restore()
-
-          const imageData = canvas.toDataURL("image/png")
-
-          // IndexedDBに保存
-          const newImage: SavedImage = {
-            id: Date.now().toString(),
-            dataUrl: imageData,
-            timestamp: Date.now(),
-          }
-          
-          try {
-            await initDB()
-            await saveImage(newImage)
-            setLastImage(imageData)
-          } catch (err) {
-            console.error("画像の保存に失敗しました", err)
-            setIsCapturing(false)
-            return
-          }
-
-          // シャッターエフェクト
-          setTimeout(() => {
-            setIsCapturing(false)
-          }, 200)
-        } else {
-          console.error("Canvas context取得失敗")
-          setIsCapturing(false)
+    // 遅延撮影モードの場合
+    if (lateShotEnabled && sourceCanvas) {
+      const ctx = canvas.getContext("2d")
+      if (ctx) {
+        // キャンバスサイズを設定
+        canvas.width = sourceCanvas.width
+        canvas.height = sourceCanvas.height
+        
+        // displayCanvasの内容をコピー
+        ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height)
+        
+        const imageData = canvas.toDataURL("image/png")
+        
+        // IndexedDBに保存
+        const newImage: SavedImage = {
+          id: Date.now().toString(),
+          dataUrl: imageData,
+          timestamp: Date.now(),
         }
+        
+        try {
+          await initDB()
+          await saveImage(newImage)
+          setLastImage(imageData)
+        } catch (err) {
+          console.error("画像の保存に失敗しました", err)
+          setIsCapturing(false)
+          return
+        }
+        
+        // シャッターエフェクト
+        setTimeout(() => {
+          setIsCapturing(false)
+        }, 200)
       } else {
-        // バッファにデータが無い場合はエラー
-        console.error("カメラの準備ができていません", {
-          readyState: video.readyState,
-          videoWidth: video.videoWidth,
-          videoHeight: video.videoHeight,
-        })
+        console.error("Canvas context取得失敗")
         setIsCapturing(false)
       }
+      return
+    }
+    
+    // 通常撮影モードの場合
+    if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+      const ctx = canvas.getContext("2d")
+      if (ctx) {
+        // キャンバスサイズを変更する場合のみ設定（サイズ変更は画面上のキャンバスをクリアしてしまうため）
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+        }
+        
+        // ズームを適用して描画
+        ctx.save()
+        ctx.translate(canvas.width / 2, canvas.height / 2)
+        ctx.scale(zoom, zoom)
+        ctx.translate(-canvas.width / 2, -canvas.height / 2)
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        ctx.restore()
+
+        const imageData = canvas.toDataURL("image/png")
+
+        // IndexedDBに保存
+        const newImage: SavedImage = {
+          id: Date.now().toString(),
+          dataUrl: imageData,
+          timestamp: Date.now(),
+        }
+        
+        try {
+          await initDB()
+          await saveImage(newImage)
+          setLastImage(imageData)
+        } catch (err) {
+          console.error("画像の保存に失敗しました", err)
+          setIsCapturing(false)
+          return
+        }
+
+        // シャッターエフェクト
+        setTimeout(() => {
+          setIsCapturing(false)
+        }, 200)
+      } else {
+        console.error("Canvas context取得失敗")
+        setIsCapturing(false)
+      }
+    } else {
+      // バッファにデータが無い場合はエラー
+      console.error("カメラの準備ができていません", {
+        readyState: video?.readyState,
+        videoWidth: video?.videoWidth,
+        videoHeight: video?.videoHeight,
+      })
+      setIsCapturing(false)
     }
   }
 
@@ -371,7 +538,10 @@ export default function CameraView() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setLateShotEnabled(!lateShotEnabled)}
+            onClick={() => {
+              console.log('[LateShot] Button clicked, current:', lateShotEnabled, 'will be:', !lateShotEnabled)
+              setLateShotEnabled(!lateShotEnabled)
+            }}
             className={isLandscape ? `text-white hover:bg-white/10 h-8 w-8 ${lateShotEnabled ? "bg-white/20" : ""}` : `text-white hover:bg-white/10 ${lateShotEnabled ? "bg-white/20" : ""}`}
             title="遅延撮影モード"
           >
@@ -399,25 +569,20 @@ export default function CameraView() {
           </div>
         ) : (
           <>
-            {lateShotEnabled ? (
-              <>
-                <video ref={videoRef} autoPlay playsInline muted className="hidden" />
-                <canvas
-                  ref={displayCanvasRef}
-                  className="h-full w-full object-cover"
-                  style={{ transform: `scale(${zoom})` }}
-                />
-              </>
-            ) : (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="h-full w-full object-cover"
-                style={{ transform: `scale(${zoom})` }}
-              />
-            )}
+            {/* WebCodecs時はvideo、Canvasフォールバック時はcanvas */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ transform: `scale(${zoom})`, display: lateShotEnabled ? 'none' : 'block' }}
+            />
+            <canvas
+              ref={displayCanvasRef}
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ transform: `scale(${zoom})`, display: lateShotEnabled ? 'block' : 'none' }}
+            />
 
             {/* グリッド線 */}
             {showGrid && (
@@ -445,7 +610,6 @@ export default function CameraView() {
         )}
 
         <canvas ref={canvasRef} className="hidden" />
-        <canvas ref={bufferCanvasRef} className="hidden" />
       </div>
 
       {/* カメラセレクター */}
